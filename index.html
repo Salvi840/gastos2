@@ -239,10 +239,17 @@ async function doRegister(){
 }
 
 function startSession(user){
+  // Clear any previous session first
+  sessionStorage.removeItem('sess');
+  if(realtimeSub){db.removeChannel(realtimeSub);realtimeSub=null;}
+  if(chartInst){chartInst.destroy();chartInst=null;}
+  gastos=[];
+
   me=user;
   sessionStorage.setItem('sess',user);
   document.getElementById('scr-auth').style.display='none';
   document.getElementById('scr-app').style.display='block';
+  document.getElementById('welcome')||null;
   loadData();
   subscribeRealtime();
 }
@@ -272,22 +279,22 @@ async function init(){
 async function loadData(){
   document.getElementById('tbl').innerHTML='<div class="loading"><div class="load-spin"></div>Cargando gastos...</div>';
   setSyncStatus('syncing');
-  const{data,error}=await db.from('gastos').select('*').order('fecha',{ascending:false}).order('id',{ascending:false});
+  const{data,error}=await db.from('gastos').select('*').eq('usuario',me).order('fecha',{ascending:false}).order('id',{ascending:false});
   if(error){document.getElementById('tbl').innerHTML='<div class="empty">Error al cargar los gastos.</div>';setSyncStatus('offline');return;}
   gastos=data||[];
   setToday();render();setSyncStatus('live');
 }
 
 function subscribeRealtime(){
-  realtimeSub=db.channel('gastos-sync')
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'gastos'},payload=>{
+  realtimeSub=db.channel('gastos-sync-'+me)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'gastos',filter:`usuario=eq.${me}`},payload=>{
       if(!gastos.find(g=>g.id===payload.new.id)){
         gastos.unshift(payload.new);
         gastos.sort((a,b)=>b.fecha.localeCompare(a.fecha)||b.id-a.id);
         render();setSyncStatus('live');
       }
     })
-    .on('postgres_changes',{event:'DELETE',schema:'public',table:'gastos'},payload=>{
+    .on('postgres_changes',{event:'DELETE',schema:'public',table:'gastos',filter:`usuario=eq.${me}`},payload=>{
       gastos=gastos.filter(g=>g.id!==payload.old.id);
       render();setSyncStatus('live');
     })
